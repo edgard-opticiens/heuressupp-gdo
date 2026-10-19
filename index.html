@@ -427,6 +427,15 @@ function onWeek(id){
     showWeekErr('Semaine '+w+' non payable sur '+mois+' '+y+' : le 27 tombe en semaine '+cutoffWeek(y,m).week+'. Elle sera payable le mois suivant.');
     inp.value=''; return;
   }
+  var dup=rowIds().some(function(otherId){
+    if(otherId===id)return false;
+    var otherTr=ge('r'+otherId);
+    return otherTr && parseInt(otherTr.querySelector('.r-s').value,10)===w;
+  });
+  if(dup){
+    showWeekErr('La semaine '+w+' est déjà saisie sur une autre ligne. Chaque semaine ne doit apparaître qu’une fois : utilisez une ligne par semaine distincte.');
+    inp.value=''; return;
+  }
   tr.querySelector('.r-fer').checked=weekHasHoliday(w,y,m);
   recalcLine(id);
 }
@@ -631,9 +640,16 @@ function validateSheet(){
   if(!gv('prenom').trim())miss.push('Prénom');
   var ids=rowIds();
   if(ids.length===0)miss.push('Au moins une ligne d’heures');
+  var semainesVues={};
   ids.forEach(function(id,idx){
     var tr=ge('r'+id),n=idx+1;
-    if(!tr.querySelector('.r-s').value)miss.push('Ligne '+n+' : n° de semaine');
+    var sVal=tr.querySelector('.r-s').value;
+    if(!sVal)miss.push('Ligne '+n+' : n° de semaine');
+    else{
+      var w=parseInt(sVal,10);
+      if(semainesVues[w])miss.push('Ligne '+n+' : semaine '+w+' déjà saisie à la ligne '+semainesVues[w]+' — une même semaine ne doit apparaître qu’une fois');
+      else semainesVues[w]=n;
+    }
     var h=tr.querySelector('.r-h').value;
     if(!h||parseFloat(h)<=0)miss.push('Ligne '+n+' : nombre d’heures');
     if(!tr.querySelector('.r-m').value.trim())miss.push('Ligne '+n+' : motif');
