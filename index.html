@@ -695,14 +695,29 @@ function shortLink(p,cb){
     .then(function(res){if(done)return;done=true;clearTimeout(to);cb(res&&res.ok&&res.cle?baseUrl()+'?s='+res.cle:makeLink(p));})
     .catch(function(){if(done)return;done=true;clearTimeout(to);cb(makeLink(p));});
 }
-function showLinkModal(title,desc,email,subject,link){
+var HS_MAIL_WEBHOOK='https://edgard-opticiens.app.n8n.cloud/webhook/hs-envoi'; // envoi auto du mail (ajouté le 2026-10-20, même backend qu'Edgard — gère déjà les 2 couleurs)
+function showLinkModal(title,desc,email,subject,link,etape){
   _link=link;
   var to=Array.isArray(email)?email.join(','):email;
   _mailto='mailto:'+to+'?subject='+encodeURIComponent(subject)+'&body=Bonjour,%0D%0A%0D%0A'+encodeURIComponent(desc)+'%0D%0A%0D%0A'+encodeURIComponent(link)+'%0D%0A%0D%0ACordialement.';
   ge('mod-title').textContent=title;
-  ge('mod-desc').textContent='Destinataire : '+to;
   ge('mod-link-text').textContent=link;
+  var d=ge('mod-desc'),mb=ge('mod-mail');
+  d.textContent='Envoi du mail à '+to+' en cours…';
+  mb.style.display='none';
   ge('mod-link').classList.add('show');
+  fetch(HS_MAIL_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      etape:etape,link:link,societe:gv('societe'),nom:gv('nom'),prenom:gv('prenom'),
+      payM:gv('payM'),payY:gv('payY'),total:ge('grandTotal').textContent})})
+    .then(function(r){return r.json().then(function(j){return !!(r.ok&&j&&j.ok)},function(){return false})})
+    .then(function(ok){
+      if(!ok)throw 0;
+      d.textContent='✅ Mail envoyé à '+to+'.';
+    })
+    .catch(function(){
+      d.textContent='⚠️ L’envoi automatique a échoué. Cliquez sur « Ouvrir l’e-mail » ou copiez le lien ci-dessous. Destinataire : '+to;
+      mb.style.display='';
+    });
 }
 function openMail(){window.location.href=_mailto}
 function copyLink(){navigator.clipboard&&navigator.clipboard.writeText(_link).then(function(){toast('Lien copié')},function(){toast('Copie impossible')})}
@@ -758,7 +773,7 @@ function sendToReseau(){
   hsLog('reseau');
   shortLink(collect('reseau'),function(link){
     showLinkModal('Envoyer aux Directeurs Réseau','Demande d’heures supplémentaires à signer — '+ident()+'.',RESEAU_EMAILS,
-      'Demande HS à signer (Réseau) — '+ident(),link);
+      'Demande HS à signer (Réseau) — '+ident(),link,'reseau');
   });
 }
 function sendToRH(){
@@ -774,7 +789,7 @@ function sendToRH(){
   hsLog('rh1');
   shortLink(collect('rh1'),function(link){
     showLinkModal('Envoyer au RH','Demande d’heures supplémentaires à chiffrer — '+ident()+'.',RH_EMAIL,
-      'Demande HS à chiffrer — '+ident(),link);
+      'Demande HS à chiffrer — '+ident(),link,'rh1');
   });
 }
 function sendToDir(){
@@ -783,7 +798,7 @@ function sendToDir(){
   hsLog('dir');
   shortLink(collect('dir'),function(link){
     showLinkModal('Envoyer pour signature Direction','Demande d’heures supplémentaires chiffrée, à signer — '+ident()+'. Total : '+ge('grandTotal').textContent+'.',DIR_EMAIL,
-      'Demande HS à signer — '+ident(),link);
+      'Demande HS à signer — '+ident(),link,'dir');
   });
 }
 function sendBackRH(){
@@ -792,7 +807,7 @@ function sendBackRH(){
   hsLog('rh2');
   shortLink(collect('rh2'),function(link){
     showLinkModal('Retour au RH','Demande d’heures supplémentaires signée par la Direction — version définitive — '+ident()+'.',RH_EMAIL,
-      'Demande HS signée — '+ident(),link);
+      'Demande HS signée — '+ident(),link,'rh2');
   });
 }
 
