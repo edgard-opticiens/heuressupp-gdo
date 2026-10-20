@@ -588,6 +588,11 @@ function applyMode(){
   ge('taux35').readOnly=!rhEdit;ge('tempsHebdo').disabled=!rhEdit;
   document.querySelectorAll('.r-h25,.r-h50,.r-hn,.r-mt').forEach(function(e){e.readOnly=!rhEdit});
   document.querySelectorAll('.r-fer').forEach(function(e){e.disabled=!rhEdit});
+  // Correction RH du mois de paiement (ajouté le 2026-10-20) : à l'étape rh1, le RH peut
+  // corriger le mois/l'année de paiement si le Directeur s'est trompé en saisie, sans avoir
+  // à tout recommencer. onPayChange() revalide chaque semaine déjà saisie par rapport au mois
+  // corrigé (garde-fou existant) : une semaine qui ne correspond plus à ce mois sera effacée.
+  if(rhEdit){ge('payM').disabled=false;ge('payY').readOnly=false;}
 
   var unlock={sal:false,dir:false,reseau:false,direction:false};
   if(MODE==='saisie'){unlock={sal:true,dir:true,reseau:false,direction:false};}
