@@ -231,7 +231,7 @@ input[type=number]{-moz-appearance:textfield}
       <div class="grid2">
         <div>
           <label class="lbl" for="taux35">Taux horaire 35H (€ brut)</label>
-          <input class="inp" id="taux35" type="number" step="0.0001" min="0" placeholder="ex : 12,40" oninput="recalcAll()">
+          <input class="inp" id="taux35" type="number" step="0.0001" min="0" placeholder="ex : 12,40" oninput="recalcAll();updButtons()">
         </div>
         <div>
           <label class="lbl" for="tempsHebdo">Temps de travail hebdomadaire</label>
@@ -312,6 +312,7 @@ var RH_EMAIL='ressources-humaines@groupe-edgard.com';
 var DIR_EMAIL='j.deruy@groupe-edgard.com';                       // Direction (M. DERUY)
 var RESEAU_EMAILS=['j.petit@groupe-edgard.com','r.guittard@groupe-edgard.com']; // Directeurs Réseau (GdO)
 var HS_LOG_WEBHOOK='https://edgard-opticiens.app.n8n.cloud/webhook/log-heures-sup'; // suivi tableau de bord RH
+var HS_RESEAU_WEBHOOK='https://edgard-opticiens.app.n8n.cloud/webhook/hs-reseau'; // anti double-signature Réseau
 
 var EDGARD_DEV='Edgard Développement';
 var EDGARD_MAG=['Ango','Biarro','Bordo','Caenpo','Giro','Havro','Jisam','Lyono','Manso','Marseillo','Nanceo','Nanto','Niceo','Orlo','Reimo','Strabo','Turo'];
@@ -680,18 +681,14 @@ function collect(nextMode){
 }
 function baseUrl(){return window.location.href.split('#')[0].split('?')[0]}
 function makeLink(p){return baseUrl()+'?s='+LZString.compressToEncodedURIComponent(JSON.stringify(p))}
-function shorten(longUrl,cb){
-  var done=false,to=setTimeout(function(){if(!done){done=true;cb(longUrl)}},6000);
-  fetch('https://is.gd/create.php?format=simple&url='+encodeURIComponent(longUrl))
-    .then(function(r){return r.text()})
-    .then(function(t){if(done)return;if(t&&t.indexOf('http')===0){done=true;clearTimeout(to);cb(t.trim())}else throw 0;})
-    .catch(function(){
-      if(done)return;
-      fetch('https://tinyurl.com/api-create.php?url='+encodeURIComponent(longUrl))
-        .then(function(r){return r.text()})
-        .then(function(t){if(done)return;done=true;clearTimeout(to);cb(t&&t.indexOf('http')===0?t.trim():longUrl);})
-        .catch(function(){if(!done){done=true;clearTimeout(to);cb(longUrl)}});
-    });
+var LIENCOURT_SAVE='https://edgard-opticiens.app.n8n.cloud/webhook/lien-court-save';
+var LIENCOURT_GET='https://edgard-opticiens.app.n8n.cloud/webhook/lien-court-get';
+function shortLink(p,cb){
+  var done=false,to=setTimeout(function(){if(!done){done=true;cb(makeLink(p))}},12000);
+  fetch(LIENCOURT_SAVE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:p})})
+    .then(function(r){return r.json()})
+    .then(function(res){if(done)return;done=true;clearTimeout(to);cb(res&&res.ok&&res.cle?baseUrl()+'?s='+res.cle:makeLink(p));})
+    .catch(function(){if(done)return;done=true;clearTimeout(to);cb(makeLink(p));});
 }
 function showLinkModal(title,desc,email,subject,link){
   _link=link;
@@ -722,13 +719,39 @@ function hsLog(etape){
   }catch(e){}
 }
 
+/* ===================== ANTI DOUBLE-SIGNATURE RÉSEAU ===================== */
+function hsCle(){
+  return (gv('societe')||'').toUpperCase().replace(/[^A-Z0-9]+/g,'_')+'_'+
+         (gv('nom')||'').toUpperCase().replace(/[^A-Z0-9]+/g,'_')+'_'+
+         (gv('prenom')||'').toUpperCase().replace(/[^A-Z0-9]+/g,'_')+'_'+
+         (gv('payY')||'')+'-'+('0'+(gv('payM')||'')).slice(-2);
+}
+function hsCheckReseau(){
+  fetch(HS_RESEAU_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'check',cle:hsCle(),nom:gv('nom'),prenom:gv('prenom')})})
+    .then(function(r){return r.json()})
+    .then(function(d){if(d&&d.signe){hsLockAlreadySigned();}})
+    .catch(function(){});
+}
+function hsLockAlreadySigned(){
+  var pad=ge('pad-reseau');pad.classList.add('locked');
+  var clr=pad.parentNode.querySelector('.clr');if(clr)clr.style.display='none';
+  var ph=pad.querySelector('.ph');if(ph)ph.style.display='none';
+  ge('btn-rh').disabled=true;
+  showFormErr(['Cette demande a déjà été signée par un autre Directeur Réseau et transmise au RH — aucune action supplémentaire n’est nécessaire de votre part.']);
+}
+function hsMarkSigneReseau(){
+  fetch(HS_RESEAU_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'signer',cle:hsCle(),nom:gv('nom'),prenom:gv('prenom')})}).catch(function(){});
+}
+
 function sendToReseau(){
   var miss=validateSheet();
   if(miss.length){showFormErr(miss);return;}
   showFormErr([]);
   toast('Création du lien…');
   hsLog('reseau');
-  shorten(makeLink(collect('reseau')),function(link){
+  shortLink(collect('reseau'),function(link){
     showLinkModal('Envoyer aux Directeurs Réseau','Demande d’heures supplémentaires à signer — '+ident()+'.',RESEAU_EMAILS,
       'Demande HS à signer (Réseau) — '+ident(),link);
   });
@@ -740,10 +763,11 @@ function sendToRH(){
     showFormErr([]);
   }else if(MODE==='reseau'){
     if(!hasSig('reseau')){toast('Signature du Directeur Réseau requise');return}
+    hsMarkSigneReseau();
   }
   toast('Création du lien…');
   hsLog('rh1');
-  shorten(makeLink(collect('rh1')),function(link){
+  shortLink(collect('rh1'),function(link){
     showLinkModal('Envoyer au RH','Demande d’heures supplémentaires à chiffrer — '+ident()+'.',RH_EMAIL,
       'Demande HS à chiffrer — '+ident(),link);
   });
@@ -752,7 +776,7 @@ function sendToDir(){
   if(!gv('taux35')){toast('Renseignez le taux horaire 35H');return}
   toast('Création du lien…');
   hsLog('dir');
-  shorten(makeLink(collect('dir')),function(link){
+  shortLink(collect('dir'),function(link){
     showLinkModal('Envoyer pour signature Direction','Demande d’heures supplémentaires chiffrée, à signer — '+ident()+'. Total : '+ge('grandTotal').textContent+'.',DIR_EMAIL,
       'Demande HS à signer — '+ident(),link);
   });
@@ -761,7 +785,7 @@ function sendBackRH(){
   if(!hasSig('direction')){toast('Signature de la Direction requise');return}
   toast('Création du lien…');
   hsLog('rh2');
-  shorten(makeLink(collect('rh2')),function(link){
+  shortLink(collect('rh2'),function(link){
     showLinkModal('Retour au RH','Demande d’heures supplémentaires signée par la Direction — version définitive — '+ident()+'.',RH_EMAIL,
       'Demande HS signée — '+ident(),link);
   });
@@ -770,7 +794,19 @@ function sendBackRH(){
 /* ============================ CHARGEMENT ÉTAT ============================ */
 function loadPayload(){
   var q=new URLSearchParams(window.location.search),s=q.get('s');if(!s)return false;
+  if(/^[a-z2-9]{8}$/.test(s)){
+    toast('Chargement…');
+    fetch(LIENCOURT_GET+'?id='+encodeURIComponent(s)).then(function(r){return r.json()}).then(function(res){
+      if(res&&res.ok&&res.data){applyPayload(res.data);}
+      else{toast('Lien invalide ou expiré');addRow();applyMode();}
+    }).catch(function(){toast('Chargement impossible, réessayez');addRow();applyMode();});
+    return true;
+  }
   var p;try{p=JSON.parse(LZString.decompressFromEncodedURIComponent(s));}catch(e){toast('Lien illisible');return false;}
+  applyPayload(p);
+  return true;
+}
+function applyPayload(p){
   MODE=p.m||'rh1';
   ge('societe').value=p.soc||'';
   ge('nom').value=p.nom||'';ge('prenom').value=p.prenom||'';
@@ -782,6 +818,7 @@ function loadPayload(){
   if(p.sigT){['sal','dir','reseau','direction'].forEach(function(k){sigTime[k]=p.sigT[k]||'';renderTime(k);});}
   updSoc();          // branding + applyMode
   refreshHints();updTotal();
+  if(MODE==='reseau'){hsCheckReseau();}
   return true;
 }
 function resetForm(){if(confirm('Réinitialiser le formulaire ?'))window.location.href=baseUrl();}
