@@ -731,11 +731,13 @@ function hsLogCle(){
          (gv('prenom')||'').toUpperCase().replace(/[^A-Z0-9]+/g,'_')+'_'+
          (gv('payY')||'')+'-'+('0'+(gv('payM')||'')).slice(-2);
 }
-function hsLog(etape){
+function hsLog(etape,lien){
   try{
+    var payload={cle:hsLogCle(),societe:gv('societe'),nom:gv('nom'),prenom:gv('prenom'),
+      periode:(gv('payY')||'')+'-'+('0'+(gv('payM')||'')).slice(-2),etape:etape};
+    if(lien) payload.lien=lien; // lien de consultation, pour que le dashboard RH puisse ouvrir le document
     fetch(HS_LOG_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({cle:hsLogCle(),societe:gv('societe'),nom:gv('nom'),prenom:gv('prenom'),
-        periode:(gv('payY')||'')+'-'+('0'+(gv('payM')||'')).slice(-2),etape:etape})}).catch(function(){});
+      body:JSON.stringify(payload)}).catch(function(){});
   }catch(e){}
 }
 
@@ -770,8 +772,8 @@ function sendToReseau(){
   if(miss.length){showFormErr(miss);return;}
   showFormErr([]);
   toast('Création du lien…');
-  hsLog('reseau');
   shortLink(collect('reseau'),function(link){
+    hsLog('reseau',link);
     showLinkModal('Envoyer aux Directeurs Réseau','Demande d’heures supplémentaires à signer — '+ident()+'.',RESEAU_EMAILS,
       'Demande HS à signer (Réseau) — '+ident(),link,'reseau');
   });
@@ -786,8 +788,8 @@ function sendToRH(){
     hsMarkSigneReseau();
   }
   toast('Création du lien…');
-  hsLog('rh1');
   shortLink(collect('rh1'),function(link){
+    hsLog('rh1',link);
     showLinkModal('Envoyer au RH','Demande d’heures supplémentaires à chiffrer — '+ident()+'.',RH_EMAIL,
       'Demande HS à chiffrer — '+ident(),link,'rh1');
   });
@@ -795,8 +797,8 @@ function sendToRH(){
 function sendToDir(){
   if(!gv('taux35')){toast('Renseignez le taux horaire 35H');return}
   toast('Création du lien…');
-  hsLog('dir');
   shortLink(collect('dir'),function(link){
+    hsLog('dir',link);
     showLinkModal('Envoyer pour signature Direction','Demande d’heures supplémentaires chiffrée, à signer — '+ident()+'. Total : '+ge('grandTotal').textContent+'.',DIR_EMAIL,
       'Demande HS à signer — '+ident(),link,'dir');
   });
@@ -804,8 +806,8 @@ function sendToDir(){
 function sendBackRH(){
   if(!hasSig('direction')){toast('Signature de la Direction requise');return}
   toast('Création du lien…');
-  hsLog('rh2');
   shortLink(collect('rh2'),function(link){
+    hsLog('rh2',link);
     showLinkModal('Retour au RH','Demande d’heures supplémentaires signée par la Direction — version définitive — '+ident()+'.',RH_EMAIL,
       'Demande HS signée — '+ident(),link,'rh2');
   });
