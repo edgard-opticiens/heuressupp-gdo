@@ -696,6 +696,30 @@ function shortLink(p,cb){
     .catch(function(){if(done)return;done=true;clearTimeout(to);cb(makeLink(p));});
 }
 var HS_MAIL_WEBHOOK='https://edgard-opticiens.app.n8n.cloud/webhook/hs-envoi'; // envoi auto du mail (ajouté le 2026-10-20, même backend qu'Edgard — gère déjà les 2 couleurs)
+// Envoi du mail de signature HS avec timeout + 1 nouvelle tentative : sans ca, un fetch()
+// qui reste bloque (ex. telephone mis en veille / onglet mis en arriere-plan pendant
+// l'envoi sur mobile) ne declenche NI le .then NI le .catch, et le bandeau "Envoi du mail
+// en cours..." reste affiche indefiniment sans jamais montrer le repli manuel "Ouvrir
+// l'e-mail" -- la personne quitte alors la page en pensant que l'envoi a reussi, et le
+// destinataire ne recoit rien (cas reel : demande HS STEVANT Jean-Baptiste / Ecume,
+// non recue par M. Deruy, 2026-10-20). Meme principe que le timeout deja utilise dans
+// shortLink() ci-dessus.
+function envoyerMailHS(payload,tentative,cb){
+  var done=false,to=setTimeout(function(){
+    if(done)return;done=true;
+    if(tentative<1){envoyerMailHS(payload,tentative+1,cb);}else{cb(false);}
+  },10000);
+  fetch(HS_MAIL_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    .then(function(r){return r.json().then(function(j){return !!(r.ok&&j&&j.ok)},function(){return false})})
+    .then(function(ok){
+      if(done)return;done=true;clearTimeout(to);
+      if(ok){cb(true);}else if(tentative<1){envoyerMailHS(payload,tentative+1,cb);}else{cb(false);}
+    })
+    .catch(function(){
+      if(done)return;done=true;clearTimeout(to);
+      if(tentative<1){envoyerMailHS(payload,tentative+1,cb);}else{cb(false);}
+    });
+}
 function showLinkModal(title,desc,email,subject,link,etape){
   _link=link;
   var to=Array.isArray(email)?email.join(','):email;
@@ -706,18 +730,15 @@ function showLinkModal(title,desc,email,subject,link,etape){
   d.textContent='Envoi du mail à '+to+' en cours…';
   mb.style.display='none';
   ge('mod-link').classList.add('show');
-  fetch(HS_MAIL_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      etape:etape,link:link,societe:gv('societe'),nom:gv('nom'),prenom:gv('prenom'),
-      payM:gv('payM'),payY:gv('payY'),total:ge('grandTotal').textContent})})
-    .then(function(r){return r.json().then(function(j){return !!(r.ok&&j&&j.ok)},function(){return false})})
-    .then(function(ok){
-      if(!ok)throw 0;
+  envoyerMailHS({etape:etape,link:link,societe:gv('societe'),nom:gv('nom'),prenom:gv('prenom'),
+      payM:gv('payM'),payY:gv('payY'),total:ge('grandTotal').textContent},0,function(ok){
+    if(ok){
       d.textContent='✅ Mail envoyé à '+to+'.';
-    })
-    .catch(function(){
+    }else{
       d.textContent='⚠️ L’envoi automatique a échoué. Cliquez sur « Ouvrir l’e-mail » ou copiez le lien ci-dessous. Destinataire : '+to;
       mb.style.display='';
-    });
+    }
+  });
 }
 function openMail(){window.location.href=_mailto}
 function copyLink(){navigator.clipboard&&navigator.clipboard.writeText(_link).then(function(){toast('Lien copié')},function(){toast('Copie impossible')})}
