@@ -752,13 +752,30 @@ function hsLogCle(){
          (gv('prenom')||'').toUpperCase().replace(/[^A-Z0-9]+/g,'_')+'_'+
          (gv('payY')||'')+'-'+('0'+(gv('payM')||'')).slice(-2);
 }
-function hsLog(etape,lien){
+// Log du suivi avec timeout + 1 nouvelle tentative (ajouté le 2026-10-23, même principe que
+// envoyerMailHS ci-dessus) : auparavant ce fetch() était pur "fire-and-forget" sans retry --
+// si cet appel échouait silencieusement (téléphone en veille, coupure réseau), la ligne de
+// suivi n'était JAMAIS créée, et rien n'apparaissait sur le tableau de bord RH pour cette
+// demande : ni "en attente", ni "bloquée" -- juste absente, sans aucune trace nulle part.
+// Une nouvelle tentative automatique réduit fortement ce risque, sans bloquer ni ralentir
+// la suite du parcours (reste volontairement silencieux côté utilisateur, comme avant).
+function hsLog(etape,lien,tentative){
+  tentative=tentative||0;
   try{
     var payload={cle:hsLogCle(),societe:gv('societe'),nom:gv('nom'),prenom:gv('prenom'),
       periode:(gv('payY')||'')+'-'+('0'+(gv('payM')||'')).slice(-2),etape:etape};
     if(lien) payload.lien=lien; // lien de consultation, pour que le dashboard RH puisse ouvrir le document
+    var done=false,to=setTimeout(function(){
+      if(done)return;done=true;
+      if(tentative<1) hsLog(etape,lien,tentative+1);
+    },10000);
     fetch(HS_LOG_WEBHOOK,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)}).catch(function(){});
+      body:JSON.stringify(payload)})
+      .then(function(){if(done)return;done=true;clearTimeout(to);})
+      .catch(function(){
+        if(done)return;done=true;clearTimeout(to);
+        if(tentative<1) hsLog(etape,lien,tentative+1);
+      });
   }catch(e){}
 }
 
